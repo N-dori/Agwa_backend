@@ -21,18 +21,23 @@ class Reading(BaseModel):
     pH: float
     temp: float
     ec: float
+    timestamp: datetime
 
 class Pod(BaseModel):
     id: str
-    readings: List[Reading]
     age: int
-    timestamp: datetime
-    status: Optional[str] = None
-    classification: Optional[str] = None
+
+class Classification(BaseModel):
+    status: str
+    classification: str
 
 class Unit(BaseModel):
     id: str
     pods: List[Pod]
+    classification:Optional[Classification] = None
+    readings: List[Reading]
+
+
 
 # -------- In-Memory Stores --------
 sensor_store = []  # Flattened last reading per pod
@@ -46,20 +51,20 @@ def validate_reading(reading: Reading) -> bool:
 @app.post("/api/sensor")
 def post_units(units: List[Unit]):
     for unit in units:
-        for pod in unit.pods:
-            if pod.readings:
-                last_reading = pod.readings[-1]
-                is_valid = validate_reading(last_reading)
-                pod.status = "OK"
-                pod.classification = "Healthy" if is_valid else "Needs Attention"
-
-                sensor_store.append({
-                    "unitId": unit.id,
-                    "podId": pod.id,
-                    "timestamp": pod.timestamp.isoformat(),
-                    "readings": last_reading.dict(),
-                    "classification": pod.classification
-                })
+        if unit.readings:
+            last_reading = unit.readings[-1]
+            is_valid = validate_reading(last_reading)
+            unit.classification = Classification(
+                    status= "OK",
+                    classification= "Healthy" if is_valid else "Needs Attention"
+            )
+            sensor_store.append({
+            "unitId": unit.id,
+            "timestamp": last_reading.timestamp.isoformat(),
+            "readings": last_reading.dict(),
+            "classification": unit.classification.dict()
+            })
+            
 
     # Save full units into memory as dicts
     sensor_units_store.extend([unit.dict() for unit in units])
@@ -68,23 +73,20 @@ def post_units(units: List[Unit]):
 # -------- GET Alerts Endpoint --------
 @app.get("/api/alerts")
 def get_problematic_readings(unitId: str = Query(...)):
-    # Find the unit
     selected_unit = next((u for u in sensor_units_store if u["id"] == unitId), None)
     if not selected_unit:
-        return  []
+        return []
 
     problematic_readings = []
-    for pod in selected_unit["pods"]:
-        for reading in pod["readings"]:
-            # Manually validate since reading is a plain dict
-            if reading["pH"] < 5.5 or reading["pH"] > 7.0:
-                problematic_readings.append({
-                    "unitId": unitId,
-                    "podId": pod["id"],
-                    "timestamp": pod["timestamp"],
-                    "readings": reading,
-                })
+    for reading in selected_unit["readings"]:
+        if reading["pH"] < 5.5 or reading["pH"] > 7.0:
+            problematic_readings.append({
+                "id": reading["id"],
+                "pH": reading["pH"],
+                "temp": reading["temp"],
+                "ec": reading["ec"],
+                 "timestamp": reading["timestamp"].isoformat() if hasattr(reading["timestamp"], "isoformat") else reading["timestamp"]
+            })
 
-    # Sort by timestamp descending
     sorted_alerts = sorted(problematic_readings, key=lambda r: r["timestamp"], reverse=True)
-    return  sorted_alerts[:10]
+    return sorted_alerts[:10]

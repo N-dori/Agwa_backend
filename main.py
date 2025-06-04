@@ -61,13 +61,13 @@ def post_units(units: List[Unit]):
             sensor_store.append({
             "unitId": unit.id,
             "timestamp": last_reading.timestamp.isoformat(),
-            "readings": last_reading.dict(),
-            "classification": unit.classification.dict()
+            "readings": last_reading.model_dump(),
+            "classification": unit.classification.model_dump()
             })
             
 
     # Save full units into memory as dicts
-    sensor_units_store.extend([unit.dict() for unit in units])
+    sensor_units_store.extend([unit.model_dump() for unit in units])
     return units
 
 # -------- GET Alerts Endpoint --------
